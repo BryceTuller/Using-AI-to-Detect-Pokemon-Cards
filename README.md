@@ -1,1 +1,0 @@
-# Using-AI-to-Detect-Pokemon-Cards
