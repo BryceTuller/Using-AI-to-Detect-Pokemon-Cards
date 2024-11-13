@@ -3,3 +3,4 @@ data/* filter=lfs diff=lfs merge=lfs -text
 yolo_files/* filter=lfs diff=lfs merge=lfs -text
 images.npy filter=lfs diff=lfs merge=lfs -text
 labels.npy filter=lfs diff=lfs merge=lfs -text
+.fileextension filter=lfs diff=lfs merge=lfs -text
