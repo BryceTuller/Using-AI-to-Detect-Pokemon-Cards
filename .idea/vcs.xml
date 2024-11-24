@@ -2,8 +2,5 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/Using-AI-to-Detect-Pokemon-Cards" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/darknet" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/darknet/Using-AI-to-Detect-Pokemon-Cards" vcs="Git" />
   </component>
 </project>
