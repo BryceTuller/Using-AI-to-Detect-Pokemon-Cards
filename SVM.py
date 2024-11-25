@@ -1,4 +1,3 @@
-import os
 import numpy as np
 from sklearn.svm import SVC
 from sklearn.metrics import (
@@ -17,6 +16,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import seaborn as sns
+from skimage.feature import local_binary_pattern
+from skimage.color import rgb2gray
 from datetime import datetime
 
 # Paths to the preprocessed data
@@ -28,22 +29,61 @@ labels_path = "labels.npy"
 images = np.load(images_path)
 labels = np.load(labels_path)
 
+# Verify dataset labels
+print(f"[{datetime.now()}] Verifying dataset labels...")
+unique_labels, label_counts = np.unique(labels, return_counts=True)
+print(f"Label distribution: {dict(zip(unique_labels, label_counts))}")
+if len(unique_labels) != 2 or set(unique_labels) != {0, 1}:
+    raise ValueError("Labels are not binary (0 for Non-Pokémon, 1 for Pokémon). Check your dataset.")
+
 print(f"[{datetime.now()}] Data loaded successfully. Splitting data into training and testing sets...")
 # Split data into training and testing sets
 x_train, x_test, y_train, y_test = train_test_split(
-    images.reshape(images.shape[0], -1), labels, test_size=0.3, random_state=42, stratify=labels
+    images, labels, test_size=0.3, random_state=42, stratify=labels
 )
 
 # Scale features for SVM
 scaler = StandardScaler()
-x_train = scaler.fit_transform(x_train)
-x_test = scaler.transform(x_test)
+x_train_flat = scaler.fit_transform(x_train.reshape(x_train.shape[0], -1))
+x_test_flat = scaler.transform(x_test.reshape(x_test.shape[0], -1))
+
+
+# Extract LBP features
+def extract_lbp_features(images, radius=3, n_points=24):
+    lbp_features = []
+    for image in images:
+        gray_image = rgb2gray(image)  # Convert to grayscale
+        lbp = local_binary_pattern(gray_image, n_points, radius, method='uniform')
+        hist, _ = np.histogram(lbp.ravel(), bins=np.arange(0, n_points + 3), range=(0, n_points + 2))
+        hist = hist.astype("float")  # Convert to float before normalization
+        hist /= (hist.sum() + 1e-7)  # Normalize
+        lbp_features.append(hist)
+    return np.array(lbp_features)
+
+
+print(f"[{datetime.now()}] Extracting LBP features for training and testing sets...")
+lbp_train = extract_lbp_features(x_train)
+lbp_test = extract_lbp_features(x_test)
+
+# Concatenate LBP features with the scaled pixel values
+x_train_combined = np.hstack((x_train_flat, lbp_train))
+x_test_combined = np.hstack((x_test_flat, lbp_test))
 
 # Apply PCA for dimensionality reduction
 print(f"[{datetime.now()}] Applying PCA for dimensionality reduction...")
 pca = PCA(n_components=50)  # Keep top 50 components
-x_train_pca = pca.fit_transform(x_train)
-x_test_pca = pca.transform(x_test)
+x_train_pca = pca.fit_transform(x_train_combined)
+x_test_pca = pca.transform(x_test_combined)
+
+# Visualize explained variance
+explained_variance = pca.explained_variance_ratio_.cumsum()
+plt.figure(figsize=(8, 6))
+plt.plot(range(1, len(explained_variance) + 1), explained_variance, marker="o")
+plt.title("Cumulative Explained Variance by PCA Components")
+plt.xlabel("Number of PCA Components")
+plt.ylabel("Cumulative Explained Variance")
+plt.grid()
+plt.show()
 
 print(f"[{datetime.now()}] Data prepared with PCA. Training samples: {len(x_train_pca)}")
 
@@ -56,17 +96,13 @@ parameters = [
     {'gamma': ['scale'], 'C': [0.1, 1, 10], 'kernel': ['linear']}
 ]
 
-# Verbose set to 3 for detailed GridSearchCV logging
 grid_search = GridSearchCV(classifier, parameters, cv=3, verbose=3, n_jobs=-1)
-
 print(f"[{datetime.now()}] Training SVM classifier with GridSearchCV. This may take a while...")
 grid_search.fit(x_train_pca, y_train)
-
 print(f"[{datetime.now()}] Finished GridSearchCV fit!")
 
 # Best classifier
 best_estimator = grid_search.best_estimator_
-
 print(f"[{datetime.now()}] Best parameters: {grid_search.best_params_}")
 print(f"[{datetime.now()}] Evaluating the model on the test set...")
 
@@ -77,7 +113,6 @@ optimal_idx = np.argmax(precision + recall)
 optimal_threshold = thresholds[optimal_idx]
 print(f"[{datetime.now()}] Optimal threshold based on Precision-Recall Curve: {optimal_threshold}")
 
-# Apply optimal threshold
 y_prediction = (y_proba >= optimal_threshold).astype(int)
 
 # Metrics calculation
@@ -88,7 +123,6 @@ f1 = f1_score(y_test, y_prediction)
 conf_matrix = confusion_matrix(y_test, y_prediction)
 report = classification_report(y_test, y_prediction, target_names=["Non-Pokémon", "Pokémon"])
 
-# Print evaluation metrics
 print(f"[{datetime.now()}] Classification Report:")
 print(report)
 
@@ -107,13 +141,15 @@ plt.ylabel("True Labels")
 plt.title("Confusion Matrix")
 plt.show()
 
-# Plot ROC Curve
-fpr, tpr, _ = roc_curve(y_test, y_proba)
+# Additional Evaluation Visualizations
+
+# ROC Curve
+fpr, tpr, roc_thresholds = roc_curve(y_test, y_proba)
 roc_auc = auc(fpr, tpr)
 
 plt.figure(figsize=(8, 6))
-plt.plot(fpr, tpr, color='blue', label=f"ROC Curve (AUC = {roc_auc:.2f})")
-plt.plot([0, 1], [0, 1], color='gray', linestyle='--')
+plt.plot(fpr, tpr, color="blue", label=f"ROC Curve (AUC = {roc_auc:.2f})")
+plt.plot([0, 1], [0, 1], color="gray", linestyle="--")
 plt.xlabel("False Positive Rate")
 plt.ylabel("True Positive Rate")
 plt.title("Receiver Operating Characteristic (ROC) Curve")
@@ -121,13 +157,41 @@ plt.legend(loc="lower right")
 plt.grid()
 plt.show()
 
+# Precision-Recall Curve
+plt.figure(figsize=(8, 6))
+plt.plot(recall, precision, marker='.', color='orange', label='Precision-Recall Curve')
+plt.xlabel("Recall")
+plt.ylabel("Precision")
+plt.title("Precision-Recall Curve")
+plt.legend(loc="upper right")
+plt.grid()
+plt.show()
 
-# Visualize Misclassified Samples
+# Learning Curve
+train_sizes, train_scores, test_scores = learning_curve(
+    best_estimator, x_train_pca, y_train, cv=5, n_jobs=-1, scoring='accuracy'
+)
+
+train_mean = np.mean(train_scores, axis=1)
+test_mean = np.mean(test_scores, axis=1)
+
+plt.figure(figsize=(8, 6))
+plt.plot(train_sizes, train_mean, label="Training Accuracy", marker="o")
+plt.plot(train_sizes, test_mean, label="Validation Accuracy", marker="o")
+plt.xlabel("Training Set Size")
+plt.ylabel("Accuracy")
+plt.title("Learning Curve")
+plt.legend()
+plt.grid()
+plt.show()
+
+
+# Visualize false positives and false negatives
 def visualize_misclassified_samples(title, indices, x_test, y_test, y_pred):
     plt.figure(figsize=(15, 5))
     for i, idx in enumerate(indices[:10]):  # Show up to 10 samples
         plt.subplot(1, min(10, len(indices)), i + 1)
-        plt.imshow(x_test[idx].reshape(128, 128, 3))  # Assuming original shape is 128x128x3
+        plt.imshow(x_test[idx])
         plt.title(f"Pred: {'Pokémon' if y_pred[idx] == 1 else 'Non-Pokémon'}\n"
                   f"True: {'Pokémon' if y_test[idx] == 1 else 'Non-Pokémon'}")
         plt.axis("off")
@@ -138,7 +202,7 @@ def visualize_misclassified_samples(title, indices, x_test, y_test, y_pred):
 visualize_misclassified_samples(
     "False Positives (Non-Pokémon as Pokémon)",
     false_positives,
-    images,
+    x_test,
     y_test,
     y_prediction
 )
@@ -146,24 +210,7 @@ visualize_misclassified_samples(
 visualize_misclassified_samples(
     "False Negatives (Pokémon as Non-Pokémon)",
     false_negatives,
-    images,
+    x_test,
     y_test,
     y_prediction
 )
-
-# Learning Curve
-train_sizes, train_scores, test_scores = learning_curve(best_estimator, x_train_pca, y_train, cv=5, n_jobs=-1)
-train_mean = np.mean(train_scores, axis=1)
-test_mean = np.mean(test_scores, axis=1)
-
-plt.figure(figsize=(8, 6))
-plt.plot(train_sizes, train_mean, label="Training Score", marker="o")
-plt.plot(train_sizes, test_mean, label="Cross-Validation Score", marker="o")
-plt.title("Learning Curve")
-plt.xlabel("Training Set Size")
-plt.ylabel("Score")
-plt.legend()
-plt.grid()
-plt.show()
-
-print(f"[{datetime.now()}] SVM classification completed successfully!")
