@@ -13,11 +13,8 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split, GridSearchCV, learning_curve
 from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import seaborn as sns
-from skimage.feature import local_binary_pattern
-from skimage.color import rgb2gray
 from datetime import datetime
 
 # Paths to the preprocessed data
@@ -44,61 +41,23 @@ x_train, x_test, y_train, y_test = train_test_split(
 
 # Scale features for SVM
 scaler = StandardScaler()
-x_train_flat = scaler.fit_transform(x_train.reshape(x_train.shape[0], -1))
-x_test_flat = scaler.transform(x_test.reshape(x_test.shape[0], -1))
+x_train_scaled = scaler.fit_transform(x_train.reshape(x_train.shape[0], -1))
+x_test_scaled = scaler.transform(x_test.reshape(x_test.shape[0], -1))
 
-
-# Extract LBP features
-def extract_lbp_features(images, radius=3, n_points=24):
-    lbp_features = []
-    for image in images:
-        gray_image = rgb2gray(image)  # Convert to grayscale
-        lbp = local_binary_pattern(gray_image, n_points, radius, method='uniform')
-        hist, _ = np.histogram(lbp.ravel(), bins=np.arange(0, n_points + 3), range=(0, n_points + 2))
-        hist = hist.astype("float")  # Convert to float before normalization
-        hist /= (hist.sum() + 1e-7)  # Normalize
-        lbp_features.append(hist)
-    return np.array(lbp_features)
-
-
-print(f"[{datetime.now()}] Extracting LBP features for training and testing sets...")
-lbp_train = extract_lbp_features(x_train)
-lbp_test = extract_lbp_features(x_test)
-
-# Concatenate LBP features with the scaled pixel values
-x_train_combined = np.hstack((x_train_flat, lbp_train))
-x_test_combined = np.hstack((x_test_flat, lbp_test))
-
-# Apply PCA for dimensionality reduction
-print(f"[{datetime.now()}] Applying PCA for dimensionality reduction...")
-pca = PCA(n_components=50)  # Keep top 50 components
-x_train_pca = pca.fit_transform(x_train_combined)
-x_test_pca = pca.transform(x_test_combined)
-
-# Visualize explained variance
-explained_variance = pca.explained_variance_ratio_.cumsum()
-plt.figure(figsize=(8, 6))
-plt.plot(range(1, len(explained_variance) + 1), explained_variance, marker="o")
-plt.title("Cumulative Explained Variance by PCA Components")
-plt.xlabel("Number of PCA Components")
-plt.ylabel("Cumulative Explained Variance")
-plt.grid()
-plt.show()
-
-print(f"[{datetime.now()}] Data prepared with PCA. Training samples: {len(x_train_pca)}")
+print(f"[{datetime.now()}] Data prepared. Training samples: {len(x_train_scaled)}")
 
 # Train classifier with GridSearchCV for optimal hyperparameters
 print(f"[{datetime.now()}] Initializing SVM classifier and hyperparameter tuning...")
-classifier = SVC(probability=True, class_weight='balanced')
+classifier = SVC(probability=True, class_weight="balanced")
 
 parameters = [
-    {'gamma': [0.01, 0.001, 0.0001], 'C': [1, 10, 100], 'kernel': ['rbf']},
-    {'gamma': ['scale'], 'C': [0.1, 1, 10], 'kernel': ['linear']}
+    {"gamma": [0.01, 0.001, 0.0001], "C": [1, 10, 100], "kernel": ["rbf"]},
+    {"gamma": ["scale"], "C": [0.1, 1, 10], "kernel": ["linear"]},
 ]
 
 grid_search = GridSearchCV(classifier, parameters, cv=3, verbose=3, n_jobs=-1)
 print(f"[{datetime.now()}] Training SVM classifier with GridSearchCV. This may take a while...")
-grid_search.fit(x_train_pca, y_train)
+grid_search.fit(x_train_scaled, y_train)
 print(f"[{datetime.now()}] Finished GridSearchCV fit!")
 
 # Best classifier
@@ -107,7 +66,7 @@ print(f"[{datetime.now()}] Best parameters: {grid_search.best_params_}")
 print(f"[{datetime.now()}] Evaluating the model on the test set...")
 
 # Predict probabilities and find optimal threshold
-y_proba = best_estimator.predict_proba(x_test_pca)[:, 1]
+y_proba = best_estimator.predict_proba(x_test_scaled)[:, 1]
 precision, recall, thresholds = precision_recall_curve(y_test, y_proba)
 optimal_idx = np.argmax(precision + recall)
 optimal_threshold = thresholds[optimal_idx]
@@ -159,7 +118,7 @@ plt.show()
 
 # Precision-Recall Curve
 plt.figure(figsize=(8, 6))
-plt.plot(recall, precision, marker='.', color='orange', label='Precision-Recall Curve')
+plt.plot(recall, precision, marker=".", color="orange", label="Precision-Recall Curve")
 plt.xlabel("Recall")
 plt.ylabel("Precision")
 plt.title("Precision-Recall Curve")
@@ -169,7 +128,7 @@ plt.show()
 
 # Learning Curve
 train_sizes, train_scores, test_scores = learning_curve(
-    best_estimator, x_train_pca, y_train, cv=5, n_jobs=-1, scoring='accuracy'
+    best_estimator, x_train_scaled, y_train, cv=5, n_jobs=-1, scoring="accuracy"
 )
 
 train_mean = np.mean(train_scores, axis=1)
@@ -184,7 +143,6 @@ plt.title("Learning Curve")
 plt.legend()
 plt.grid()
 plt.show()
-
 
 # Visualize false positives and false negatives
 def visualize_misclassified_samples(title, indices, x_test, y_test, y_pred):
@@ -204,7 +162,7 @@ visualize_misclassified_samples(
     false_positives,
     x_test,
     y_test,
-    y_prediction
+    y_prediction,
 )
 
 visualize_misclassified_samples(
@@ -212,5 +170,5 @@ visualize_misclassified_samples(
     false_negatives,
     x_test,
     y_test,
-    y_prediction
+    y_prediction,
 )
