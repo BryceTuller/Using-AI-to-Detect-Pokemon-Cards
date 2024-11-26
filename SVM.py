@@ -63,47 +63,71 @@ print(f"[{datetime.now()}] Finished GridSearchCV fit!")
 # Best classifier
 best_estimator = grid_search.best_estimator_
 print(f"[{datetime.now()}] Best parameters: {grid_search.best_params_}")
-print(f"[{datetime.now()}] Evaluating the model on the test set...")
 
 # Predict probabilities and find optimal threshold
-y_proba = best_estimator.predict_proba(x_test_scaled)[:, 1]
-precision, recall, thresholds = precision_recall_curve(y_test, y_proba)
+y_proba_test = best_estimator.predict_proba(x_test_scaled)[:, 1]
+precision, recall, thresholds = precision_recall_curve(y_test, y_proba_test)
 optimal_idx = np.argmax(precision + recall)
 optimal_threshold = thresholds[optimal_idx]
 print(f"[{datetime.now()}] Optimal threshold based on Precision-Recall Curve: {optimal_threshold}")
 
-y_prediction = (y_proba >= optimal_threshold).astype(int)
+y_pred_test = (y_proba_test >= optimal_threshold).astype(int)
 
-# Metrics calculation
-accuracy = accuracy_score(y_test, y_prediction)
-precision = precision_score(y_test, y_prediction)
-recall = recall_score(y_test, y_prediction)
-f1 = f1_score(y_test, y_prediction)
-conf_matrix = confusion_matrix(y_test, y_prediction)
-report = classification_report(y_test, y_prediction, target_names=["Non-Pokémon", "Pokémon"])
+# Evaluate on Test Set
+print(f"[{datetime.now()}] Evaluating the model on the test set...")
+test_accuracy = accuracy_score(y_test, y_pred_test)
+test_precision = precision_score(y_test, y_pred_test)
+test_recall = recall_score(y_test, y_pred_test)
+test_f1 = f1_score(y_test, y_pred_test)
+conf_matrix_test = confusion_matrix(y_test, y_pred_test)
+test_report = classification_report(y_test, y_pred_test, target_names=["Non-Pokémon", "Pokémon"])
 
-print(f"[{datetime.now()}] Classification Report:")
-print(report)
+print(f"Testing Set Metrics:")
+print(f"Accuracy: {test_accuracy:.4f}")
+print(f"Precision: {test_precision:.4f}")
+print(f"Recall: {test_recall:.4f}")
+print(f"F1-Score: {test_f1:.4f}")
+print(test_report)
 
-# Identify false positives and false negatives
-false_positives = np.where((y_test == 0) & (y_prediction == 1))[0]
-false_negatives = np.where((y_test == 1) & (y_prediction == 0))[0]
+# Evaluate on Training Set
+print(f"[{datetime.now()}] Evaluating the model on the training set...")
+y_proba_train = best_estimator.predict_proba(x_train_scaled)[:, 1]
+y_pred_train = (y_proba_train >= optimal_threshold).astype(int)
 
-print(f"[{datetime.now()}] Found {len(false_positives)} false positives and {len(false_negatives)} false negatives.")
+train_accuracy = accuracy_score(y_train, y_pred_train)
+train_precision = precision_score(y_train, y_pred_train)
+train_recall = recall_score(y_train, y_pred_train)
+train_f1 = f1_score(y_train, y_pred_train)
+
+print(f"Training Set Metrics:")
+print(f"Accuracy: {train_accuracy:.4f}")
+print(f"Precision: {train_precision:.4f}")
+print(f"Recall: {train_recall:.4f}")
+print(f"F1-Score: {train_f1:.4f}")
+
+# Identify false positives and false negatives for both training and testing sets
+false_positives_test = np.where((y_test == 0) & (y_pred_test == 1))[0]
+false_negatives_test = np.where((y_test == 1) & (y_pred_test == 0))[0]
+
+false_positives_train = np.where((y_train == 0) & (y_pred_train == 1))[0]
+false_negatives_train = np.where((y_train == 1) & (y_pred_train == 0))[0]
+
+print(f"[{datetime.now()}] Found {len(false_positives_test)} false positives and {len(false_negatives_test)} false negatives on the test set.")
+print(f"[{datetime.now()}] Found {len(false_positives_train)} false positives and {len(false_negatives_train)} false negatives on the training set.")
 
 # Plot confusion matrix
 plt.figure(figsize=(8, 6))
-sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues", xticklabels=["Non-Pokémon", "Pokémon"],
+sns.heatmap(conf_matrix_test, annot=True, fmt="d", cmap="Blues", xticklabels=["Non-Pokémon", "Pokémon"],
             yticklabels=["Non-Pokémon", "Pokémon"])
 plt.xlabel("Predicted Labels")
 plt.ylabel("True Labels")
-plt.title("Confusion Matrix")
+plt.title("Confusion Matrix (Test Set)")
 plt.show()
 
 # Additional Evaluation Visualizations
 
 # ROC Curve
-fpr, tpr, roc_thresholds = roc_curve(y_test, y_proba)
+fpr, tpr, roc_thresholds = roc_curve(y_test, y_proba_test)
 roc_auc = auc(fpr, tpr)
 
 plt.figure(figsize=(8, 6))
@@ -145,30 +169,45 @@ plt.grid()
 plt.show()
 
 # Visualize false positives and false negatives
-def visualize_misclassified_samples(title, indices, x_test, y_test, y_pred):
+def visualize_misclassified_samples(title, indices, x_data, y_data, y_pred):
     plt.figure(figsize=(15, 5))
     for i, idx in enumerate(indices[:10]):  # Show up to 10 samples
         plt.subplot(1, min(10, len(indices)), i + 1)
-        plt.imshow(x_test[idx])
+        plt.imshow(x_data[idx])
         plt.title(f"Pred: {'Pokémon' if y_pred[idx] == 1 else 'Non-Pokémon'}\n"
-                  f"True: {'Pokémon' if y_test[idx] == 1 else 'Non-Pokémon'}")
+                  f"True: {'Pokémon' if y_data[idx] == 1 else 'Non-Pokémon'}")
         plt.axis("off")
     plt.suptitle(title)
     plt.show()
 
-
 visualize_misclassified_samples(
-    "False Positives (Non-Pokémon as Pokémon)",
-    false_positives,
+    "False Positives (Non-Pokémon as Pokémon) - Test Set",
+    false_positives_test,
     x_test,
     y_test,
-    y_prediction,
+    y_pred_test,
 )
 
 visualize_misclassified_samples(
-    "False Negatives (Pokémon as Non-Pokémon)",
-    false_negatives,
+    "False Negatives (Pokémon as Non-Pokémon) - Test Set",
+    false_negatives_test,
     x_test,
     y_test,
-    y_prediction,
+    y_pred_test,
+)
+
+visualize_misclassified_samples(
+    "False Positives (Non-Pokémon as Pokémon) - Training Set",
+    false_positives_train,
+    x_train,
+    y_train,
+    y_pred_train,
+)
+
+visualize_misclassified_samples(
+    "False Negatives (Pokémon as Non-Pokémon) - Training Set",
+    false_negatives_train,
+    x_train,
+    y_train,
+    y_pred_train,
 )

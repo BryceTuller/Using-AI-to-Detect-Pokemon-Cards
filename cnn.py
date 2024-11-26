@@ -9,8 +9,8 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
     precision_recall_curve,
-    auc,
-    roc_curve
+    roc_curve,
+    auc
 )
 from sklearn.model_selection import train_test_split
 from datetime import datetime
@@ -29,7 +29,6 @@ labels = np.load(labels_path)
 labels = to_categorical(labels, num_classes=2)
 
 print(f"[{datetime.now()}] Data loaded successfully. Splitting data into training and testing sets...")
-
 x_train, x_test, y_train, y_test = train_test_split(
     images, labels, test_size=0.3, random_state=42, stratify=labels
 )
@@ -69,104 +68,67 @@ history = cnn_model.fit(
     verbose=1
 )
 
-# Evaluate the model
+# Evaluate the model on training and testing sets
 print(f"[{datetime.now()}] Evaluating the model...")
-test_loss, test_accuracy = cnn_model.evaluate(x_test, y_test)
-print(f"Test Accuracy: {test_accuracy * 100:.2f}%")
+train_loss, train_accuracy = cnn_model.evaluate(x_train, y_train, verbose=0)
+test_loss, test_accuracy = cnn_model.evaluate(x_test, y_test, verbose=0)
+print(f"Training Accuracy: {train_accuracy * 100:.2f}%, Testing Accuracy: {test_accuracy * 100:.2f}%")
 
-# Save predictions and true labels
-y_pred_proba = cnn_model.predict(x_test)  # Probabilities
-y_pred = np.argmax(y_pred_proba, axis=1)  # Predicted labels
-y_true = np.argmax(y_test, axis=1)  # True labels
+# Generate predictions for both sets
+y_train_pred_proba = cnn_model.predict(x_train)
+y_test_pred_proba = cnn_model.predict(x_test)
+y_train_pred = np.argmax(y_train_pred_proba, axis=1)
+y_test_pred = np.argmax(y_test_pred_proba, axis=1)
+y_train_true = np.argmax(y_train, axis=1)
+y_test_true = np.argmax(y_test, axis=1)
 
-# Fine-tune confidence threshold
-thresholds = np.arange(0.5, 1.0, 0.05)
-for threshold in thresholds:
-    y_pred_custom = (y_pred_proba[:, 1] >= threshold).astype(int)
-    print(f"Threshold: {threshold:.2f}")
-    print(classification_report(y_true, y_pred_custom, target_names=["Non-Pokémon", "Pokémon"]))
+# Function to evaluate model performance
+def evaluate_model_performance(y_true, y_pred, set_name):
+    print(f"\nEvaluation on {set_name} Set:")
+    print(classification_report(y_true, y_pred, target_names=["Non-Pokémon", "Pokémon"]))
+    conf_matrix = confusion_matrix(y_true, y_pred)
+    print(f"Confusion Matrix:\n{conf_matrix}")
+    false_positives = np.sum((y_true == 0) & (y_pred == 1))
+    false_negatives = np.sum((y_true == 1) & (y_pred == 0))
+    print(f"False Positives: {false_positives}, False Negatives: {false_negatives}")
+    return conf_matrix
 
-# Plot confusion matrix
-conf_matrix = confusion_matrix(y_true, y_pred)
+# Evaluate on training set
+conf_matrix_train = evaluate_model_performance(y_train_true, y_train_pred, "Training")
+
+# Evaluate on testing set
+conf_matrix_test = evaluate_model_performance(y_test_true, y_test_pred, "Testing")
+
+# Plot confusion matrix for testing set
 plt.figure(figsize=(8, 6))
-sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues", xticklabels=["Non-Pokémon", "Pokémon"],
+sns.heatmap(conf_matrix_test, annot=True, fmt="d", cmap="Blues", xticklabels=["Non-Pokémon", "Pokémon"],
             yticklabels=["Non-Pokémon", "Pokémon"])
 plt.xlabel("Predicted Labels")
 plt.ylabel("True Labels")
-plt.title("Confusion Matrix")
+plt.title("Confusion Matrix (Testing Set)")
 plt.show()
 
-# ROC Curve
-fpr, tpr, _ = roc_curve(y_true, y_pred_proba[:, 1])
+# Plot ROC Curve for testing set
+fpr, tpr, _ = roc_curve(y_test_true, y_test_pred_proba[:, 1])
 roc_auc = auc(fpr, tpr)
 plt.figure(figsize=(8, 6))
 plt.plot(fpr, tpr, label=f"ROC Curve (AUC = {roc_auc:.2f})")
 plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
 plt.xlabel("False Positive Rate")
 plt.ylabel("True Positive Rate")
-plt.title("Receiver Operating Characteristic (ROC) Curve")
+plt.title("Receiver Operating Characteristic (ROC) Curve (Testing Set)")
 plt.legend()
 plt.grid()
 plt.show()
 
-# Precision-Recall Curve
-precision, recall, _ = precision_recall_curve(y_true, y_pred_proba[:, 1])
+# Plot Precision-Recall Curve for testing set
+precision, recall, _ = precision_recall_curve(y_test_true, y_test_pred_proba[:, 1])
 pr_auc = auc(recall, precision)
 plt.figure(figsize=(8, 6))
 plt.plot(recall, precision, label=f"Precision-Recall Curve (AUC = {pr_auc:.2f})")
 plt.xlabel("Recall")
 plt.ylabel("Precision")
-plt.title("Precision-Recall Curve")
-plt.legend()
-plt.grid()
-plt.show()
-
-# Custom Learning Curve Implementation
-print(f"[{datetime.now()}] Plotting Learning Curve...")
-train_sizes = np.linspace(0.1, 1.0, 5)
-train_accuracies = []
-val_accuracies = []
-
-for train_size in train_sizes:
-    print(f"Training on {int(train_size * len(x_train))} samples...")
-    x_train_subset = x_train[:int(train_size * len(x_train))]
-    y_train_subset = y_train[:int(train_size * len(y_train))]
-
-    # Reinitialize model to prevent cumulative training effects
-    cnn_model = Sequential([
-        Conv2D(32, (3, 3), activation='relu', input_shape=(128, 128, 3)),
-        MaxPooling2D((2, 2)),
-        Dropout(0.25),
-        Conv2D(64, (3, 3), activation='relu'),
-        MaxPooling2D((2, 2)),
-        Dropout(0.25),
-        Flatten(),
-        Dense(128, activation='relu'),
-        Dropout(0.5),
-        Dense(2, activation='softmax')
-    ])
-    cnn_model.compile(optimizer=Adam(learning_rate=0.001),
-                      loss='categorical_crossentropy',
-                      metrics=['accuracy'])
-
-    history = cnn_model.fit(
-        x_train_subset, y_train_subset,
-        validation_data=(x_test, y_test),
-        epochs=10,
-        batch_size=32,
-        verbose=0
-    )
-
-    train_accuracies.append(history.history['accuracy'][-1])
-    val_accuracies.append(history.history['val_accuracy'][-1])
-
-# Plotting the Learning Curve
-plt.figure(figsize=(10, 6))
-plt.plot(train_sizes, train_accuracies, label='Training Accuracy', marker='o')
-plt.plot(train_sizes, val_accuracies, label='Validation Accuracy', marker='o')
-plt.xlabel('Training Set Size Fraction')
-plt.ylabel('Accuracy')
-plt.title('Learning Curve')
+plt.title("Precision-Recall Curve (Testing Set)")
 plt.legend()
 plt.grid()
 plt.show()
