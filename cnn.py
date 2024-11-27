@@ -82,6 +82,7 @@ y_test_pred = np.argmax(y_test_pred_proba, axis=1)
 y_train_true = np.argmax(y_train, axis=1)
 y_test_true = np.argmax(y_test, axis=1)
 
+
 # Function to evaluate model performance
 def evaluate_model_performance(y_true, y_pred, set_name):
     print(f"\nEvaluation on {set_name} Set:")
@@ -92,6 +93,7 @@ def evaluate_model_performance(y_true, y_pred, set_name):
     false_negatives = np.sum((y_true == 1) & (y_pred == 0))
     print(f"False Positives: {false_positives}, False Negatives: {false_negatives}")
     return conf_matrix
+
 
 # Evaluate on training set
 conf_matrix_train = evaluate_model_performance(y_train_true, y_train_pred, "Training")
