@@ -46,7 +46,7 @@ cnn_model = Sequential([
     Flatten(),
     Dense(128, activation='relu'),
     Dropout(0.5),
-    Dense(2, activation='softmax')
+    Dense(1, activation='sigmoid')
 ])
 
 cnn_model.compile(optimizer=Adam(learning_rate=0.001),
